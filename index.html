@@ -1,178 +1,165 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>かくれんぼ - 探索モードデモ (白黒)</title>
+<meta charset="UTF-8">
+<title>Random Blocks Animation</title>
 <style>
-  /* full-screen black background; canvas scaled to viewport */
-  html,body { height:100%; margin:0; background:#000; }
-  body { display:flex; align-items:center; justify-content:center; }
-  canvas { width:100vw; height:100vh; display:block; }
-  /* force monospace font on page (canvas uses context.font) */
+    body {
+        margin: 0;
+        background: black;
+        overflow: hidden;
+        font-family: monospace;
+        color: white;
+    }
+    canvas {
+        display: block;
+    }
 </style>
 </head>
 <body>
-<canvas id="scene" width="1920" height="1080" aria-label="探索モードデモ"></canvas>
-
+<canvas id="c"></canvas>
 <script>
-(() => {
-  const CANVAS_W = 1920;
-  const CANVAS_H = 1080;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
 
-  const BLOCK_COUNT = 50;         // ブロック数
-  const BLOCK_SIZE = 70;          // ブロック内サイズ（px）
-  const ROT_MIN = -60;            // 回転下限（度）
-  const ROT_MAX = 60;             // 回転上限（度）
-  const MIN_PERIOD = 1000;        // 数字の上下周期最短 (ms)
-  const MAX_PERIOD = 2000;        // 数字の上下周期最長 (ms)
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-  const canvas = document.getElementById('scene');
-  const ctx = canvas.getContext('2d', { alpha: false });
+const BLOCK_COUNT = 50;
+const BLOCK_W = 120;
+const BLOCK_H = 120;
 
-  // ensure proper backing scale for crisp lines (canvas sized 1920x1080 already)
-  canvas.width = CANVAS_W;
-  canvas.height = CANVAS_H;
+const blocks = [];
 
-  // utility
-  const rand = (a,b) => a + Math.random() * (b-a);
-  const randInt = (a,b) => Math.floor(rand(a,b+1));
-  const choice = arr => arr[Math.floor(Math.random()*arr.length)];
-  const pad3 = n => (''+n).padStart(3,'0');
+function randomLetter() {
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    return letters[Math.floor(Math.random() * letters.length)];
+}
+function randomNumber() {
+    return String(Math.floor(100 + Math.random() * 900));
+}
 
-  // generate blocks
-  const blocks = [];
-  for (let i=0;i<BLOCK_COUNT;i++){
-    // random position but keep margin so blocks fully visible after rotate (approx)
-    const margin = 120; // safe margin for rotated boxes
-    const x = rand(margin, CANVAS_W - margin);
-    const y = rand(margin, CANVAS_H - margin);
-    const angleDeg = rand(ROT_MIN, ROT_MAX);
-    const angle = angleDeg * Math.PI/180;
-    const letter = String.fromCharCode(65 + Math.floor(Math.random()*26)); // A-Z
-    const number = pad3(randInt(0,999));
-    const period = rand(MIN_PERIOD, MAX_PERIOD); // one full up->down->up cycle
-    // We implement a simple phase: 0..1 moves number from above -> inside -> hidden -> above
-    // We'll compute animation progress by timestamp % period.
-    const phaseOffset = Math.random() * period; // random offset so each block unsynced
-    blocks.push({ x, y, angle, letter, number, period, phaseOffset });
-  }
-
-  // drawing style: white strokes/fills, monospace fonts
-  const drawScene = (t) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
-
-    // white stroke for boxes and white text
-    ctx.strokeStyle = '#fff';
-    ctx.fillStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-
-    // draw each block
-    for (const b of blocks){
-      const cx = b.x;
-      const cy = b.y;
-      const s = BLOCK_SIZE;
-      const ang = b.angle;
-
-      // compute numeric animation progress
-      const now = t + b.phaseOffset;
-      const p = (now % b.period) / b.period; // 0..1
-      // We want: at p=0 -> number above; increasing -> move down into box (0..0.5); 0.5 to 1 -> move up out
-      // Create a triangular motion for vertical offset and determine visibility:
-      // map p to y offset relative to top-of-box:
-      // we'll compute numY = topY - off when above, then move towards center (and become hidden)
-      // Let's define animation phases:
-      // 0.00 - 0.45 : number moves from above to inside (visible)
-      // 0.45 - 0.55 : number is inside (hidden)
-      // 0.55 - 1.00 : number moves from inside to above (visible)
-      let numVisible = true;
-      let numProgress = 0;
-      if (p < 0.45) {
-        numProgress = p / 0.45; // 0..1
-        numVisible = true;
-      } else if (p < 0.55) {
-        numProgress = 1;
-        numVisible = false; // hidden while fully inside
-      } else {
-        numProgress = (1 - p) / 0.45; // 1..0
-        numVisible = true;
-      }
-
-      // compute vertical offset: when numProgress==0 -> above offset = 40; when ==1 -> inside center offset = 0
-      const ABOVE_OFFSET = 40; // px above top of box (starting)
-      const numOffset = ABOVE_OFFSET * (1 - numProgress); // reduces to 0 as it goes inside
-
-      // Draw rotated box
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(ang);
-      // outer double-border style: draw small decorative inset corners (simple)
-      // draw square
-      const half = s/2;
-      ctx.beginPath();
-      ctx.rect(-half, -half, s, s);
-      ctx.stroke();
-
-      // inner diamond background (optional subtle)
-      // draw inner small rotated square to mimic sample
-      ctx.beginPath();
-      const inset = 6;
-      ctx.moveTo(-half+inset, -half+inset);
-      ctx.lineTo(half-inset, -half+inset);
-      ctx.lineTo(half-inset, half-inset);
-      ctx.lineTo(-half+inset, half-inset);
-      ctx.closePath();
-      ctx.stroke();
-
-      // draw letter centered (monospace)
-      ctx.fillStyle = '#fff';
-      ctx.font = '48px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(b.letter, 0, 0);
-
-      ctx.restore();
-
-      // draw number above box, but positioned in screen coords: compute top center of rotated box
-      // top center in world coords: take cx, cy, and compute offset in rotated coordinate
-      const topCenterX = cx + Math.sin(ang) * (s/2); // small approximation
-      const topCenterY = cy - Math.cos(ang) * (s/2);
-
-      // number Y position = topCenterY - numOffset - some margin while above
-      const numberY = topCenterY - numOffset - 8;
-
-      if (numVisible) {
-        ctx.fillStyle = '#fff';
-        ctx.font = '20px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        // draw number as 3-digit
-        ctx.fillText(b.number, topCenterX, numberY);
-      }
-
-      // small decorative tiny number when fully inside we didn't draw (hidden)
-      // optional: draw faint small corner marker - skipped to keep strict bw
+// ===========================
+// 位置重なりチェック
+// ===========================
+function isOverlap(x, y) {
+    for (const b of blocks) {
+        if (
+            x < b.x + BLOCK_W &&
+            x + BLOCK_W > b.x &&
+            y < b.y + BLOCK_H &&
+            y + BLOCK_H > b.y
+        ) {
+            return true;
+        }
     }
-  };
+    return false;
+}
 
-  // animation loop (t in ms)
-  function loop(t) {
-    drawScene(t);
+// ===========================
+// ブロック生成
+// ===========================
+for (let i = 0; i < BLOCK_COUNT; i++) {
+
+    let x, y;
+    let tries = 0;
+
+    // ★ 重なり防止
+    do {
+        x = Math.random() * (canvas.width - BLOCK_W);
+        y = Math.random() * (canvas.height - BLOCK_H);
+        tries++;
+        if (tries > 500) break;
+    } while (isOverlap(x, y));
+
+    blocks.push({
+        x, y,
+        angle: (Math.random() * -40),  // 真横〜上向きのランダム角度
+        letter: randomLetter(),
+        number: randomNumber(),
+        
+        // アニメーション制御
+        numberY: -20,  // 初期位置（ボックス上に表示）
+        state: "WAIT",
+        timer: 0,
+        waitTime: 1000 + Math.random() * 1000 // 1〜2秒の待ち
+    });
+}
+
+// ===========================
+// メインループ
+// ===========================
+function loop(timestamp) {
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (const b of blocks) {
+
+        // =============== アニメーション制御 ===============
+        switch (b.state) {
+            case "WAIT":
+                b.timer += 16;
+                if (b.timer >= b.waitTime) {
+                    b.timer = 0;
+                    b.state = "DOWN";
+                }
+                break;
+
+            case "DOWN": // 数字が下へ
+                b.numberY += 6;
+                if (b.numberY > BLOCK_H + 20) {
+                    b.state = "HIDE";
+                    b.timer = 0;
+                    b.waitTime = 1000 + Math.random() * 1000;
+                }
+                break;
+
+            case "HIDE": // 隠れている時間
+                b.timer += 16;
+                if (b.timer >= b.waitTime) {
+                    b.state = "UP";
+                }
+                break;
+
+            case "UP": // 上に戻る
+                b.numberY -= 6;
+                if (b.numberY <= -20) {
+                    b.number = randomNumber(); // ★数字更新
+                    b.state = "WAIT";
+                    b.timer = 0;
+                    b.waitTime = 1000 + Math.random() * 1000;
+                }
+                break;
+        }
+
+        // =============== 描画 ===============
+
+        ctx.save();
+        ctx.translate(b.x + BLOCK_W/2, b.y + BLOCK_H/2);
+        ctx.rotate(b.angle * Math.PI / 180);
+
+        // 枠
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-BLOCK_W/2, -BLOCK_H/2, BLOCK_W, BLOCK_H);
+
+        // アルファベット
+        ctx.font = "48px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(b.letter, 0, 10);
+
+        // 数字（位置は b.numberY）
+        ctx.font = "32px monospace";
+        ctx.fillText(b.number, 0, b.numberY - BLOCK_H/2);
+
+        ctx.restore();
+    }
+
     requestAnimationFrame(loop);
-  }
+}
 
-  // handle resize: canvas scaled via CSS; nothing to change for drawing since internal res fixed 1920x1080
-  window.addEventListener('resize', () => {
-    // nothing needed; CSS handles scaling to fit viewport
-  });
-
-  // start
-  requestAnimationFrame(loop);
-
-})();
+loop();
 </script>
 </body>
 </html>
