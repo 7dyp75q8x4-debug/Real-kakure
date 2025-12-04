@@ -7,133 +7,147 @@
     body {
         margin: 0;
         overflow: hidden;
-        background: black;
+        background: #000;
+        font-family: monospace;
     }
+
     canvas {
         display: block;
     }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
+<canvas id="cv"></canvas>
 
 <script>
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("cv");
 const ctx = canvas.getContext("2d");
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resize();
+window.onresize = resize;
 
+// ========= BLOCK GENERATION ========= //
 const BLOCK_COUNT = 50;
-const BLOCK_SIZE = 80;
-
+const BLOCK_SIZE = 65;  
 const blocks = [];
 
-// =========  重ならないランダム配置 ========= //
-function placeBlocks() {
-    let tries = 0;
-    for (let i = 0; i < BLOCK_COUNT; i++) {
-        let x, y;
-        let safe = false;
+function rand(min, max) {
+    return Math.random() * (max - min) + min;
+}
 
-        while (!safe && tries < 5000) {
-            tries++;
-            x = Math.random() * (canvas.width - BLOCK_SIZE - 100) + 50;
-            y = Math.random() * (canvas.height - BLOCK_SIZE - 100) + 50;
+function noOverlap(x, y, size) {
+    for (const b of blocks) {
+        if (Math.abs(b.x - x) < size * 1.2 && Math.abs(b.y - y) < size * 1.2) {
+            return false;
+        }
+    }
+    return true;
+}
 
-            safe = true;
-            for (let b of blocks) {
-                if (Math.hypot(b.x - x, b.y - y) < BLOCK_SIZE * 1.3) {
-                    safe = false;
-                    break;
-                }
+for (let i = 0; i < BLOCK_COUNT; i++) {
+    let x, y;
+    do {
+        x = rand(0, canvas.width - BLOCK_SIZE);
+        y = rand(0, canvas.height - BLOCK_SIZE);
+    } while (!noOverlap(x, y, BLOCK_SIZE));
+
+    blocks.push({
+        x,
+        y,
+        r: rand(-45, 45),               // 真横以下の角度
+        letter: String.fromCharCode(65 + Math.floor(Math.random() * 26)),
+        number: ("" + Math.floor(rand(100, 999))),
+        state: 0,                       // 0=表示中停止,1=下へ隠れる,2=隠れ中停止,3=上へ戻る
+        timer: rand(1000, 2000),
+        numOffset: 0                    // 数字のY座標変化量
+    });
+}
+
+// ========= MAIN LOOP ========= //
+
+function update(dt) {
+    for (const b of blocks) {
+        b.timer -= dt;
+
+        // 数字上下移動量
+        const travel = BLOCK_SIZE * 0.9;
+
+        if (b.state === 0 && b.timer <= 0) {
+            b.state = 1;           // 隠れる動作へ
+        } 
+        else if (b.state === 1) {
+            b.numOffset += dt * 0.15; // 下へ動く
+            if (b.numOffset >= travel) {
+                b.numOffset = travel;
+                b.state = 2;
+                b.timer = rand(1000, 2000);
             }
         }
-
-        const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
-        const number = String(Math.floor(Math.random() * 900 + 100));
-        const angle = (Math.random() * 60 - 30) * Math.PI / 180; // -30°〜30°
-
-        blocks.push({
-            x, y,
-            letter,
-            number,
-            angle,
-            numberOffset: 0,
-            state: "show", // show → hide → show
-            timer: Date.now() + rand(1000, 2000),
-        });
+        else if (b.state === 2 && b.timer <= 0) {
+            b.state = 3;           // 上に戻る動作へ
+        }
+        else if (b.state === 3) {
+            b.numOffset -= dt * 0.15; // 上へ戻る
+            if (b.numOffset <= 0) {
+                b.numOffset = 0;
+                b.state = 0;
+                b.timer = rand(1000, 2000);
+                b.number = ("" + Math.floor(rand(100, 999))); // 数字更新
+                b.letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+            }
+        }
     }
 }
 
-function rand(min, max) {
-    return Math.floor(Math.random() * (max - min) + min);
-}
-
-placeBlocks();
-
-// ========= 数字アニメーション ========= //
-function updateAnimation(block) {
-    const now = Date.now();
-
-    if (now < block.timer) return;
-
-    if (block.state === "show") {
-        block.state = "goingDown";
-        block.timer = now + rand(400, 700);
-    } else if (block.state === "goingDown") {
-        block.state = "hidden";
-        block.timer = now + rand(1000, 2000);
-    } else if (block.state === "hidden") {
-        block.state = "goingUp";
-        block.timer = now + rand(400, 700);
-    } else if (block.state === "goingUp") {
-        block.state = "show";
-        block.timer = now + rand(1000, 2000);
-    }
-}
-
-function drawBlock(block) {
-    ctx.save();
-    ctx.translate(block.x, block.y);
-    ctx.rotate(block.angle);
-
-    // ---- 白いフチの四角 ----
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(-BLOCK_SIZE/2, -BLOCK_SIZE/2, BLOCK_SIZE, BLOCK_SIZE);
-
-    // ---- アルファベット ----
-    ctx.fillStyle = "white";
-    ctx.font = "bold 42px monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(block.letter, 0, 5);
-
-    // ---- 数字 ----
-    let offset = 0;
-    if (block.state === "goingDown") offset = 40;
-    if (block.state === "hidden") offset = 80;
-    if (block.state === "goingUp") offset = 40;
-
-    ctx.font = "22px monospace";
-    ctx.fillText(block.number, 0, -BLOCK_SIZE/2 - 10 - offset);
-
-    ctx.restore();
-}
-
-function loop() {
+function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (let block of blocks) {
-        updateAnimation(block);
-        drawBlock(block);
+    ctx.strokeStyle = "#fff";
+    ctx.fillStyle = "#fff";
+    ctx.lineWidth = 2;
+
+    for (const b of blocks) {
+        ctx.save();
+        ctx.translate(b.x + BLOCK_SIZE / 2, b.y + BLOCK_SIZE / 2);
+        ctx.rotate(b.r * Math.PI / 180);
+        ctx.translate(-BLOCK_SIZE / 2, -BLOCK_SIZE / 2);
+
+        // --- Block square ---
+        ctx.strokeRect(0, 0, BLOCK_SIZE, BLOCK_SIZE);
+
+        // --- Letter inside block ---
+        ctx.font = (BLOCK_SIZE * 0.7) + "px monospace";
+        ctx.fillText(b.letter, BLOCK_SIZE * 0.23, BLOCK_SIZE * 0.75);
+
+        // --- Number above (slides up/down) ---
+        ctx.font = (BLOCK_SIZE * 0.35) + "px monospace";
+        ctx.fillText(
+            b.number,
+            BLOCK_SIZE * 0.0,
+            -5 - b.numOffset
+        );
+
+        ctx.restore();
     }
+}
+
+// ========= ANIMATION LOOP ========= //
+
+let last = performance.now();
+function loop(now) {
+    const dt = now - last;
+    last = now;
+
+    update(dt);
+    draw();
 
     requestAnimationFrame(loop);
 }
-
-loop();
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
