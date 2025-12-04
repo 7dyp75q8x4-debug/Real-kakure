@@ -1,189 +1,154 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Random Blocks - Hide Number Inside Box</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Block Hide Number</title>
 <style>
-  html,body { height:100%; margin:0; background:#000; }
-  canvas { display:block; width:100vw; height:100vh; }
-  /* monospace font ensures same look */
-  @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap');
+    body {
+        margin: 0;
+        background: black;
+        overflow: hidden;
+        font-family: monospace;
+        color: white;
+    }
+    .block {
+        position: absolute;
+        width: 80px;
+        height: 80px;
+        border: 3px solid white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 48px;
+        box-sizing: border-box;
+        transform-origin: center center;
+    }
+    .number {
+        position: absolute;
+        width: 100%;
+        text-align: center;
+        font-size: 22px;
+        top: -30px;
+        opacity: 1;
+        transition: opacity 0.2s linear;
+        pointer-events: none;
+    }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
 
 <script>
-(() => {
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
+const BLOCK_COUNT = 50;
+const blockSize = 80;
 
-  // Target full-screen 1920x1080 style but responsive
-  function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-  window.addEventListener('resize', resize);
-  resize();
+// -------------- 重なり防止ランダム配置 --------------
+function generateNonOverlappingPositions(count) {
+    const list = [];
+    const maxAttempts = 2000;
 
-  // Config
-  const COUNT = 50;
-  const BLOCK_SIZE = Math.round(Math.min(canvas.width, canvas.height) / 10); // medium sized
-  const MIN_ANGLE = -25 * Math.PI/180; // radians (no more than ~25deg)
-  const MAX_ANGLE = 25 * Math.PI/180;
-  const MIN_WAIT = 1000; // ms
-  const MAX_WAIT = 2000;
-  const SPEED = 2.2; // px per frame step for moving number (tunable)
-  const FONT_FAMILY = "'Roboto Mono', monospace";
+    for (let i = 0; i < count; i++) {
+        let x, y, ok = false;
+        let tries = 0;
 
-  // Utils
-  function rand(min, max){ return Math.random()*(max-min)+min; }
-  function randint(min,max){ return Math.floor(rand(min,max+1)); }
-  function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-  function randomLetter(){ return String.fromCharCode(65 + Math.floor(Math.random()*26)); }
-  function randomNumber3(){ return String(100 + Math.floor(Math.random()*900)).slice(-3); }
+        while (!ok && tries < maxAttempts) {
+            tries++;
 
-  // Non-overlapping placement
-  const blocks = [];
+            x = Math.random() * (window.innerWidth - blockSize - 20);
+            y = Math.random() * (window.innerHeight - blockSize - 20);
 
-  function overlaps(x,y, r){
-    for(const b of blocks){
-      const dx = b.x - x;
-      const dy = b.y - y;
-      const dist = Math.hypot(dx,dy);
-      if(dist < r + Math.hypot(BLOCK_SIZE, BLOCK_SIZE)*0.6) return true;
-    }
-    return false;
-  }
+            ok = true;
 
-  // create blocks
-  for(let i=0;i<COUNT;i++){
-    let tries = 0;
-    let x,y;
-    do {
-      tries++;
-      // keep slightly inside canvas margins
-      x = rand(BLOCK_SIZE, canvas.width - BLOCK_SIZE);
-      y = rand(BLOCK_SIZE, canvas.height - BLOCK_SIZE);
-      if(tries>1000) break;
-    } while(overlaps(x,y, BLOCK_SIZE));
-    const angle = rand(MIN_ANGLE, MAX_ANGLE);
-    const letter = randomLetter();
-    const number = randomNumber3();
-
-    // state for number animation:
-    // numOffset: how much the number has moved downward from the "top" resting position
-    // states: "top" (visible on top), "goingDown", "hiddenWait", "goingUp"
-    const b = {
-      x, y, angle,
-      letter, number,
-      numOffset: 0,
-      state: 'top',
-      timer: Date.now(),
-      wait: rand(MIN_WAIT, MAX_WAIT)
-    };
-    blocks.push(b);
-  }
-
-  // draw loop
-  ctx.font = `bold ${Math.round(BLOCK_SIZE*0.4)}px ${FONT_FAMILY}`;
-  const NUM_FONT = `700 ${Math.round(BLOCK_SIZE*0.22)}px ${FONT_FAMILY}`;
-
-  function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-
-    const now = Date.now();
-
-    for(const b of blocks){
-      // update state machine for number animation
-      if(b.state === 'top'){
-        if(now - b.timer >= b.wait){
-          b.state = 'goingDown';
+            for (let b of list) {
+                if (
+                    x < b.x + blockSize + 10 &&
+                    x + blockSize + 10 > b.x &&
+                    y < b.y + blockSize + 10 &&
+                    y + blockSize + 10 > b.y
+                ) {
+                    ok = false;
+                    break;
+                }
+            }
         }
-      } else if(b.state === 'goingDown'){
-        b.numOffset += SPEED;
-        if(b.numOffset >= BLOCK_SIZE * 0.92){
-          b.numOffset = BLOCK_SIZE * 0.92;
-          b.state = 'hiddenWait';
-          b.timer = now;
-          b.wait = rand(MIN_WAIT, MAX_WAIT);
-        }
-      } else if(b.state === 'hiddenWait'){
-        if(now - b.timer >= b.wait){
-          b.state = 'goingUp';
-        }
-      } else if(b.state === 'goingUp'){
-        b.numOffset -= SPEED;
-        if(b.numOffset <= 0){
-          b.numOffset = 0;
-          b.state = 'top';
-          b.timer = now;
-          b.wait = rand(MIN_WAIT, MAX_WAIT);
-        }
-      }
-
-      // draw number first in global transformed coords of the block
-      ctx.save();
-      ctx.translate(b.x, b.y);
-      ctx.rotate(b.angle);
-
-      // Draw number at position relative to block:
-      // "top" position is slightly above the box top: y = -BLOCK_SIZE/2 - 12
-      // when numOffset increases it moves downwards toward center and beyond.
-      ctx.font = NUM_FONT;
-      ctx.fillStyle = '#fff';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-
-      const numX = 0;
-      const numY = -BLOCK_SIZE/2 - 12 + b.numOffset;
-      ctx.fillText(b.number, numX, numY);
-
-      // If the number is inside the box area, hide it:
-      // box vertical bounds in local coords: [-BLOCK_SIZE/2, +BLOCK_SIZE/2]
-      // if numY is between those, mask by drawing a filled rect of background
-      if(numY >= -BLOCK_SIZE/2 && numY <= BLOCK_SIZE/2){
-        // fill inner area with background color to hide the number
-        // keep stroke visible so draw stroke after this
-        ctx.fillStyle = '#000';
-        // small inset to not overwrite the border stroke
-        const inset = 3;
-        ctx.fillRect(-BLOCK_SIZE/2 + inset, -BLOCK_SIZE/2 + inset, BLOCK_SIZE - inset*2, BLOCK_SIZE - inset*2);
-      }
-
-      // draw the box stroke (always on top)
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(-BLOCK_SIZE/2, -BLOCK_SIZE/2, BLOCK_SIZE, BLOCK_SIZE);
-
-      // draw the letter centered
-      ctx.fillStyle = '#fff';
-      ctx.font = `bold ${Math.round(BLOCK_SIZE*0.45)}px ${FONT_FAMILY}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(b.letter, 0, 6);
-
-      ctx.restore();
+        list.push({ x, y });
     }
 
-    requestAnimationFrame(draw);
-  }
+    return list;
+}
 
-  requestAnimationFrame(draw);
+// -------------- ブロック生成 --------------
+const positions = generateNonOverlappingPositions(BLOCK_COUNT);
 
-  // allow click to pause/resume for quick testing
-  let paused = false;
-  window.addEventListener('keydown', e => {
-    if(e.key === ' ') {
-      paused = !paused;
-      if(!paused) requestAnimationFrame(draw);
+positions.forEach((pos, i) => {
+    const block = document.createElement("div");
+    block.className = "block";
+
+    // ランダムアルファベット
+    const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+    block.textContent = letter;
+
+    // ランダム角度（真横以下）
+    const angle = Math.random() * 30 - 15; 
+    block.style.transform = `rotate(${angle}deg)`;
+
+    // ランダム3桁数字
+    const number = document.createElement("div");
+    number.className = "number";
+    number.textContent = Math.floor(100 + Math.random() * 900);
+    block.appendChild(number);
+
+    block.style.left = pos.x + "px";
+    block.style.top = pos.y + "px";
+
+    document.body.appendChild(block);
+
+    animateNumber(number);
+});
+
+// -------------- 数字の隠れアニメーション --------------
+function animateNumber(numElem) {
+    let hidden = false;
+
+    function cycle() {
+        const waitTime = 1000 + Math.random() * 1000; // 1〜2秒
+
+        if (!hidden) {
+            // ↓ ブロックに入って隠れる
+            numElem.animate(
+                [
+                    { transform: "translateY(0px)" },
+                    { transform: "translateY(50px)" }
+                ],
+                { duration: 400, fill: "forwards" }
+            );
+
+            setTimeout(() => {
+                numElem.style.opacity = 0; // ← ブロック内で見えなくする
+                hidden = true;
+                setTimeout(cycle, waitTime);
+            }, 400);
+
+        } else {
+            // ↑ ブロックの外へ戻って見えるように
+            numElem.style.opacity = 1;
+
+            numElem.animate(
+                [
+                    { transform: "translateY(50px)" },
+                    { transform: "translateY(0px)" }
+                ],
+                { duration: 400, fill: "forwards" }
+            );
+
+            hidden = false;
+            setTimeout(cycle, waitTime);
+        }
     }
-  });
 
-})();
+    cycle();
+}
 </script>
+
 </body>
 </html>
